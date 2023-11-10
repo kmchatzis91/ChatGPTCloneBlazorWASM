@@ -1,0 +1,49 @@
+﻿@*CSS*@
+<style>
+    .dot {
+        margin: 0 auto;
+        color: black;
+        width: 48px;
+        height: 24px;
+        --d: radial-gradient(farthest-side,currentColor 90%,#0000);
+        background: var(--d),var(--d),var(--d);
+        background-size: 12px 12px;
+        background-repeat: no-repeat;
+        animation: m 1s infinite alternate;
+        display: block;
+        cursor: text;
+    }
+
+    @@keyframes m {
+        0% {
+            background-position: calc(0*100%/2) 50%, calc(1*100%/2) 50%, calc(2*100%/2) 50%
+        }
+
+        20% {
+            background-position: calc(0*100%/2) 0, calc(1*100%/2) 50%, calc(2*100%/2) 50%
+        }
+
+        40% {
+            background-position: calc(0*100%/2) 100%, calc(1*100%/2) 0, calc(2*100%/2) 50%
+        }
+
+        60% {
+            background-position: calc(0*100%/2) 50%, calc(1*100%/2) 100%, calc(2*100%/2) 0
+        }
+
+        80% {
+            background-position: calc(0*100%/2) 50%, calc(1*100%/2) 50%, calc(2*100%/2) 100%
+        }
+
+        100% {
+            background-position: calc(0*100%/2) 50%, calc(1*100%/2) 50%, calc(2*100%/2) 50%
+        }
+    }
+</style>
+
+@*HTML*@
+<span class="dot"></span>
+
+@code {
+
+}

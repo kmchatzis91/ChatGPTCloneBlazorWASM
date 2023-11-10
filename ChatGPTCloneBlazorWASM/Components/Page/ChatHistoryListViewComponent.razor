@@ -1,0 +1,129 @@
+﻿@using System.Diagnostics.CodeAnalysis;
+@using ChatGPTCloneBlazorWASM.Components.Loading
+@using ChatGPTCloneBlazorWASM.Models;
+@using Markdig;
+
+@*CSS*@
+<style>
+    .chatCol-2-span {
+        display: block;
+        cursor: text;
+    }
+
+    .chatCol-2 {
+        width: 92%;
+    }
+
+    .dateLabel {
+        font-size: 10px;
+        font-weight: bold;
+        margin-top: 1%;
+        margin-bottom: 1%;
+        font-style: italic;
+        cursor: text;
+    }
+
+    .user-speech-bubble {
+        position: relative;
+        max-width: 85%;
+        background-image: linear-gradient(to left, #fff, #f4e0f8, #cc7af2);
+        text-align: left;
+        color: #000;
+        margin: 12px;
+        padding: 14px;
+        border-radius: 16px;
+        cursor: text;
+    }
+
+        .user-speech-bubble:after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 50%;
+            width: 0;
+            height: 0;
+            border: 24px solid transparent;
+            border-left-color: #fff;
+            border-right: 0;
+            border-bottom: 0;
+            margin-top: -12px;
+            margin-right: -24px;
+        }
+
+    .bot-speech-bubble {
+        position: relative;
+        max-width: 85%;
+        background-image: linear-gradient(to right, #fff, #f4e0f8, #cc7af2);
+        text-align: left;
+        color: #000;
+        margin: 12px;
+        padding: 14px;
+        border-radius: 16px;
+        cursor: text;
+    }
+
+        .bot-speech-bubble:after {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            width: 0;
+            height: 0;
+            border: 24px solid transparent;
+            border-right-color: #fff;
+            border-left: 0;
+            border-bottom: 0;
+            margin-top: -12px;
+            margin-left: -24px;
+        }
+</style>
+
+@*HTML*@
+<div class="row" style="margin:1%; text-align:@(History.User == Consts.Bot ? "left" : "right");">
+    @if (History.User == Consts.Bot)
+    {
+        <ChatHistoryItemImageViewComponent UserImagePath="@History.UserImagePath" />
+    }
+
+    <div class="column chatCol-2">
+        <label class="@(History.User == Consts.Bot ? "bot-speech-bubble" : "user-speech-bubble")">
+            @if (History.User == Consts.Bot && History.Message == "")
+            {
+                <ThinkingDotsComponent />
+            }
+            else
+            {
+                <span class="chatCol-2-span" style="text-align:@(History.User == Consts.Bot ? "left" : "right");">
+                    <label class="dateLabel">@ChatDate</label>
+                </span>
+                <span class="chatCol-2-span">
+                    @if (History.User == Consts.Bot)
+                    {
+                        @if (History.IsMessageMarkdown == false)
+                        {
+                            @History.Message
+                        }
+                        else
+                        {
+                            @((MarkupString)Markdown.ToHtml(History.Message))
+                        }
+                    }
+                    else
+                    {
+                        @History.Message
+                    }
+                </span>
+            }
+        </label>
+    </div>
+
+    @if (History.User == Consts.User)
+    {
+        <ChatHistoryItemImageViewComponent UserImagePath="@History.UserImagePath" />
+    }
+</div>
+
+@code {
+    [Parameter, AllowNull] public ChatHistoryItem History { get; set; }
+    [Parameter, AllowNull] public string ChatDate { get; set; }
+}

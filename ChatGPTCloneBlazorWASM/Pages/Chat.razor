@@ -1,0 +1,510 @@
+﻿@page "/chat"
+@using ChatGPTCloneBlazorWASM.Components.Page
+@using ChatGPTCloneBlazorWASM.Models;
+@using System.Diagnostics;
+@using Markdig;
+@using Newtonsoft.Json;
+@using System.Diagnostics.CodeAnalysis;
+@using System.Text;
+@inject IJSRuntime JS
+
+<PageTitle>Chat</PageTitle>
+
+@*CSS*@
+<style>
+    .page {
+        min-height: 100vh;
+        width: 100%;
+        background: url('resources/chat_bg.png');
+        background-position: center;
+        background-size: cover;
+        overflow-y: clip;
+    }
+
+    #chatDiv::-webkit-scrollbar {
+        width: 2px;
+    }
+
+    #chatDiv::-webkit-scrollbar-track {
+        box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
+    }
+
+    #chatDiv::-webkit-scrollbar-thumb {
+        background-color: white;
+        outline: 1px solid slategrey;
+        border-radius: 16px;
+    }
+
+    #chatDiv::-webkit-scrollbar-button:vertical:decrement {
+        height: 0.6em;
+        border-width: 0.4em;
+        border-color: transparent transparent #404040 transparent;
+    }
+
+        #chatDiv::-webkit-scrollbar-button:vertical:decrement:hover {
+            border-color: transparent transparent #505050 transparent;
+        }
+
+    #chatDiv::-webkit-scrollbar-button:vertical:increment {
+        height: 0.6em;
+        border-width: 0.4em;
+        border-color: #404040 transparent transparent transparent;
+    }
+
+        #chatDiv::-webkit-scrollbar-button:vertical:increment:hover {
+            border-color: #505050 transparent transparent transparent;
+        }
+
+    .formContainerLeftCol {
+        width: 90%;
+    }
+
+    .formContainerRightCol {
+        width: 10%;
+    }
+
+    #textAreaId:focus {
+        outline: none;
+    }
+
+    #textAreaId::-webkit-scrollbar {
+        width: 2px;
+    }
+
+    #textAreaId::-webkit-scrollbar-track {
+        box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
+    }
+
+    #textAreaId::-webkit-scrollbar-thumb {
+        background-color: white;
+        outline: 1px solid slategrey;
+        border-radius: 16px;
+    }
+
+    #textAreaId::-webkit-scrollbar-button:vertical:decrement {
+        height: 0.6em;
+        border-width: 0.4em;
+        border-color: transparent transparent #404040 transparent;
+    }
+
+        #textAreaId::-webkit-scrollbar-button:vertical:decrement:hover {
+            border-color: transparent transparent #505050 transparent;
+        }
+
+    #textAreaId::-webkit-scrollbar-button:vertical:increment {
+        height: 0.6em;
+        border-width: 0.4em;
+        border-color: #404040 transparent transparent transparent;
+    }
+
+        #textAreaId::-webkit-scrollbar-button:vertical:increment:hover {
+            border-color: #505050 transparent transparent transparent;
+        }
+
+    .btn-span {
+        display: block;
+    }
+
+    .btn:focus, .btn:active {
+        outline: none !important;
+        box-shadow: none;
+    }
+
+    .formButtonAskImg {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        margin: 0 auto;
+        padding: 0;
+    }
+
+    .formButtonStopImg {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        margin: 0 auto;
+        padding: 0;
+    }
+</style>
+
+@*HTML*@
+<section style="@chatPageContainerClass">
+    <div style="@chatContainerClass" id="chatDiv">
+        @foreach (var history in History)
+        {
+            <ChatHistoryListViewComponent History="@history" ChatDate="@chatDate" />
+        }
+    </div>
+    <div style="@formContainerClass" class="row">
+        <div class="column formContainerLeftCol">
+            <textarea style="@textAreaClass"
+                      id="textAreaId" @bind="UserInput.Text"
+                      placeholder="Ask a question..." @oninput="(cea) => {SetTextAreaValue(cea.Value.ToString());}"
+                      disabled="@disableInput" @onkeydown="EnterKeyPressed">           
+            </textarea>
+        </div>
+        <div class="column formContainerRightCol">
+            <span class="btn-span">
+                <button @onclick="Ask"
+                        style="@formButtonAskClass"
+                        class="btn btn-light"
+                        disabled="@disableInput">
+                    <img class="formButtonAskImg align-self-center" src="resources/ask-icon.png" title="Ask" />
+                </button>
+            </span>
+            <span class="btn-span">
+                <button @onclick="StopGeneratingText"
+                        style="@formButtonStopClass"
+                        class="btn btn-danger @enableOrDisableFormButtonStop">
+                    <i class="oi oi-media-stop formButtonStopImg align-self-center" title="Stop" />
+                </button>
+            </span>
+        </div>
+    </div>
+</section>
+
+@code {
+    #region Fields & Properties
+    // api
+    private readonly HttpClient _httpClient = new HttpClient();
+    private string apiKey = "YOUR_API_KEY";
+    private string path = "https://api.openai.com/v1/chat/completions";
+
+    // page
+    private string? chatPageContainerClass { get; set; }
+    private string? chatContainerClass { get; set; }
+    private string? formContainerClass { get; set; }
+    private string? textAreaClass { get; set; }
+    private string? formButtonAskClass { get; set; }
+    private string? formButtonStopClass { get; set; }
+    private int chatPageContainerClassHeight { get; set; }
+    private int chatContainerClassHeight { get; set; }
+    private int formContainerClassHeight { get; set; }
+    private int textAreaClassHeight { get; set; }
+    private int formButtonAskClassHeight { get; set; }
+    private int formButtonStopClassHeight { get; set; }
+    private List<ChatHistoryItem> History = new List<ChatHistoryItem>();
+    private UserInput UserInput = new UserInput();
+    private string? chatDate = string.Empty;
+    private bool disableInput { get; set; }
+    private bool stopGeneratingText { get; set; }
+    private string? enableOrDisableFormButtonStop { get; set; }
+    #endregion
+
+    #region Methods
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+            await SetPageCss();
+        }
+        catch (Exception ex)
+        {
+            Error.Display("Chat/OnInitializedAsync()", ex.Message);
+        }
+    }
+
+    private async Task SetPageCss()
+    {
+        try
+        {
+            chatPageContainerClass = string.Empty;
+            chatContainerClass = string.Empty;
+            formContainerClass = string.Empty;
+            textAreaClass = string.Empty;
+            formButtonAskClass = string.Empty;
+            formButtonStopClass = string.Empty;
+            chatPageContainerClassHeight = 0;
+            chatContainerClassHeight = 0;
+            formContainerClassHeight = 0;
+            textAreaClassHeight = 0;
+            formButtonAskClassHeight = 0;
+            formButtonStopClassHeight = 0;
+            enableOrDisableFormButtonStop = "disabled";
+
+            var screenHeight = await JS.InvokeAsync<double>("GetScreenHeightFromJS");
+            chatPageContainerClassHeight = (int)Math.Round(screenHeight * 0.90);
+            chatContainerClassHeight = (int)Math.Round(chatPageContainerClassHeight * 0.86);
+            formContainerClassHeight = (int)Math.Round(chatPageContainerClassHeight * 0.13);
+            textAreaClassHeight = (int)Math.Round(formContainerClassHeight * 0.90);
+            formButtonAskClassHeight = (int)Math.Round(textAreaClassHeight * 0.46);
+            formButtonStopClassHeight = (int)Math.Round(textAreaClassHeight * 0.46);
+
+            if (string.IsNullOrEmpty(chatPageContainerClass) || string.IsNullOrWhiteSpace(chatPageContainerClass))
+            {
+                chatPageContainerClass = $@"margin: 0 auto;
+                                            padding: 0;
+                                            width: 100%;
+                                            height: {chatPageContainerClassHeight.ToString()}px;
+                                            background-color: #ffffff00;
+                                            border-radius: 10px;";
+            }
+
+            if (string.IsNullOrEmpty(chatContainerClass) || string.IsNullOrWhiteSpace(chatContainerClass))
+            {
+                chatContainerClass = $@"margin: 0 auto;
+                                        width: 100%;
+                                        height: {chatContainerClassHeight.ToString()}px;
+                                        background-color: #ffffff00;
+                                        padding: 10px;
+                                        overflow-y: auto;";
+            }
+
+            if (string.IsNullOrEmpty(formContainerClass) || string.IsNullOrWhiteSpace(formContainerClass))
+            {
+                formContainerClass = $@"margin: 0 auto;
+                                        padding: 0.1%;
+                                        width: 68%;
+                                        height: {formContainerClassHeight.ToString()}px;
+                                        background-color: #4105a2;
+                                        border-top: 1px solid #fff;
+                                        border-bottom: 1px solid #fff;
+                                        border-radius: 10px;";
+            }
+
+            if (string.IsNullOrEmpty(textAreaClass) || string.IsNullOrWhiteSpace(textAreaClass))
+            {
+                textAreaClass = $@"margin: 0 auto;
+                                   padding: 0.5%;
+                                   width: 100%;
+                                   height: {textAreaClassHeight.ToString()}px;
+                                   max-height: {textAreaClassHeight.ToString()}px;
+                                   resize: none;
+                                   background-color: #ffffff00;
+                                   border-color: #ffffff00;
+                                   outline: none;
+                                   color: #fff;";
+            }
+
+            if (string.IsNullOrEmpty(formButtonAskClass) || string.IsNullOrWhiteSpace(formButtonAskClass))
+            {
+                formButtonAskClass = $@"width: 100%;
+                                        height: {formButtonAskClassHeight.ToString()}px;
+                                        max-height: {formButtonAskClassHeight.ToString()}px;
+                                        margin: 2px auto;";
+            }
+
+            if (string.IsNullOrEmpty(formButtonStopClass) || string.IsNullOrWhiteSpace(formButtonStopClass))
+            {
+                formButtonStopClass = $@"width: 100%;
+                                         height: {formButtonStopClassHeight.ToString()}px;
+                                         max-height: {formButtonStopClassHeight.ToString()}px;
+                                         margin: 2px auto;";
+            }
+        }
+        catch (Exception ex)
+        {
+            Error.Display("Chat/SetPageCss()", ex.Message);
+        }
+    }
+
+    private async Task Ask()
+    {
+        try
+        {
+            disableInput = true;
+            enableOrDisableFormButtonStop = "disabled";
+            chatDate = DateTime.Now.ToString("dddd, dd MMMM yyyy HH:mm");
+            CreateAndAddChatHistoryItems();
+
+            if (string.IsNullOrEmpty(History[History.Count - 2].Message) || string.IsNullOrWhiteSpace(History[History.Count - 2].Message))
+            {
+                History[History.Count - 2].Message = Consts.NoInputFromUser;
+
+                foreach (var nr in Consts.NoReplyFromBot)
+                {
+                    await Task.Delay(5);
+                    History[History.Count - 1].Message += nr;
+                    await ChangeStateAndScroll();
+                }
+
+                ResetPageVariablesToDefault();
+                await ChangeStateAndScroll();
+                return;
+            }
+
+            await ChangeStateAndScroll();
+
+            CancellationToken ct = new();
+            using StringContent jsonContent = new(JsonConvert.SerializeObject(new
+            {
+                model = "gpt-3.5-turbo",
+                messages = new[] { new { role = "user", content = UserInput.Text } }
+            }), Encoding.UTF8, "application/json");
+
+            using HttpResponseMessage httpResponseMessage = await _httpClient.PostAsync(path, jsonContent, ct);
+            var response = await httpResponseMessage.Content.ReadAsStringAsync(ct);
+            var output = JsonConvert.DeserializeObject<ChatResponse>(response);
+            var message = output?.Choices?[0].Message?.Content;
+            enableOrDisableFormButtonStop = "";
+
+            if (!string.IsNullOrEmpty(message) || !string.IsNullOrWhiteSpace(message))
+            {
+                foreach (var r in message)
+                {
+                    await Task.Delay(5);
+                    History[History.Count - 1].Message += r;
+                    await ChangeStateAndScroll();
+
+                    if (stopGeneratingText == true)
+                        break;
+                }
+            }
+
+            History[History.Count - 1].IsMessageMarkdown = true;
+            await ChangeStateAndScroll();
+
+            if (History[History.Count - 1].Message == "")
+            {
+                enableOrDisableFormButtonStop = "disabled";
+
+                foreach (var nr in Consts.NoReplyFromBot)
+                {
+                    History[History.Count - 1].Message += nr;
+                    await ChangeStateAndScroll();
+                }
+            }
+
+            ResetPageVariablesToDefault();
+            await ChangeStateAndScroll();
+        }
+        catch (Exception ex)
+        {
+            Error.Display("Chat/Ask()", ex.Message);
+            await HandleResponseError();
+            ResetPageVariablesToDefault();
+            await ChangeStateAndScroll();
+        }
+    }
+
+    private void CreateAndAddChatHistoryItems()
+    {
+        try
+        {
+            History.Add(new ChatHistoryItem()
+                {
+                    User = Consts.User,
+                    Message = UserInput.Text,
+                    UserImagePath = "resources/user.png",
+                    IsMessageMarkdown = false,
+                });
+
+            History.Add(new ChatHistoryItem()
+                {
+                    User = Consts.Bot,
+                    Message = "",
+                    UserImagePath = "resources/bot.png",
+                    IsMessageMarkdown = false,
+                });
+        }
+        catch (Exception ex)
+        {
+            Error.Display("Chat/CreateAndAddChatHistoryItems()", ex.Message);
+        }
+    }
+
+    private async Task EnterKeyPressed(KeyboardEventArgs kea)
+    {
+        try
+        {
+            if ((kea.Code == "Enter" && !kea.ShiftKey) || (kea.Code == "NumpadEnter" && !kea.ShiftKey))
+            {
+                await Ask();
+            }
+        }
+        catch (Exception ex)
+        {
+            Error.Display("Chat/EnterKeyPressed(KeyboardEventArgs kea)", ex.Message);
+        }
+    }
+
+    private void SetTextAreaValue(string value)
+    {
+        try
+        {
+            UserInput.Text = value;
+        }
+        catch (Exception ex)
+        {
+            Error.Display("Chat/SetTextAreaValue(string value)", ex.Message);
+        }
+    }
+
+    private async Task ScrollToEnd()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("ScrollToEnd");
+        }
+        catch (Exception ex)
+        {
+            Error.Display("Chat/ScrollToEnd()", ex.Message);
+        }
+    }
+
+    private async Task ChangeStateAndScroll()
+    {
+        try
+        {
+            await ScrollToEnd();
+            StateHasChanged();
+            await ScrollToEnd();
+        }
+        catch (Exception ex)
+        {
+            Error.Display("Chat/ChangeStateAndScroll()", ex.Message);
+        }
+    }
+
+    private void StopGeneratingText()
+    {
+        try
+        {
+            stopGeneratingText = true;
+            enableOrDisableFormButtonStop = "disabled";
+        }
+        catch (Exception ex)
+        {
+            Error.Display("Chat/StopGeneratingText()", ex.Message);
+        }
+    }
+
+    private void ResetPageVariablesToDefault()
+    {
+        try
+        {
+            UserInput.Text = "";
+            disableInput = false;
+            stopGeneratingText = false;
+            enableOrDisableFormButtonStop = "disabled";
+        }
+        catch (Exception ex)
+        {
+            Error.Display("Chat/ResetPageVariablesToDefault()", ex.Message);
+        }
+    }
+
+    private async Task HandleResponseError()
+    {
+        try
+        {
+            enableOrDisableFormButtonStop = "disabled";
+
+            if (History[History.Count - 1].Message == "")
+            {
+                foreach (var cna in Consts.BotCanNotAnswerQuestion)
+                {
+                    await Task.Delay(5);
+                    History[History.Count - 1].Message += cna;
+                    await ChangeStateAndScroll();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Error.Display("Chat/HandleResponseError()", ex.Message);
+        }
+    }
+    #endregion
+}
